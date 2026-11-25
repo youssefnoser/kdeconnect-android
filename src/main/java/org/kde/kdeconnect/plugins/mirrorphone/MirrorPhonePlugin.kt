@@ -104,6 +104,12 @@ class MirrorPhonePlugin : Plugin() {
 
     override fun getUiButtons(): List<PluginUiButton> = listOf(
         PluginUiButton(context.getString(R.string.mirrorphone_mirror_button), R.drawable.ic_mirror_screen_24dp) { mirrorScreen() },
+        PluginUiButton(context.getString(R.string.openapp_button), R.drawable.ic_open_app_24dp) { parentActivity ->
+            parentActivity.startActivity(
+                Intent(parentActivity, OpenAppActivity::class.java)
+                    .putExtra(OpenAppActivity.EXTRA_DEVICE_ID, device.deviceId)
+            )
+        },
     )
 
     fun mirrorScreen() {
@@ -119,9 +125,24 @@ class MirrorPhonePlugin : Plugin() {
         device.sendPacket(np)
     }
 
+    /** [turnScreenOff]: this screen goes dark while the app is open on the desktop, which needs Android 15 */
+    fun openApp(packageName: String, label: String, turnScreenOff: Boolean) {
+        val np = NetworkPacket(PACKET_TYPE_REQUEST)
+        np["action"] = "openApp"
+        np["package"] = packageName
+        np["label"] = label
+        np["turnScreenOff"] = turnScreenOff
+        device.sendPacket(np)
+    }
+
     override fun onPacketReceived(np: NetworkPacket): Boolean = when (np.type) {
         PACKET_TYPE_RESPONSE -> {
-            if (!np.getBoolean("success", false)) {
+            val success = np.getBoolean("success", false)
+            if (success) {
+                if (np.getString("action", "") == "openApp") {
+                    toast(context.getString(R.string.openapp_opened, device.name), Toast.LENGTH_SHORT)
+                }
+            } else {
                 toast(context.getString(R.string.mirrorphone_failed, np.getString("error", "")), Toast.LENGTH_LONG)
             }
             true
