@@ -16,22 +16,34 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.ContentObserver
+import android.graphics.Bitmap
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.helpers.NotificationHelper
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
 import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect_tp.R
+import java.io.ByteArrayOutputStream
 
 /**
  * Shows this phone's screen, or one of its apps, in a window on the desktop.
@@ -53,9 +65,9 @@ class MirrorPhonePlugin : Plugin() {
     override val description: String
         get() = context.getString(R.string.pref_plugin_mirrorphone_desc)
 
-    override val supportedPacketTypes: Array<String> = arrayOf(PACKET_TYPE_RESPONSE, PACKET_TYPE_ADB, PACKET_TYPE_STATUS)
+    override val supportedPacketTypes: Array<String> = arrayOf(PACKET_TYPE_RESPONSE, PACKET_TYPE_ADB, PACKET_TYPE_STATUS, PACKET_TYPE_ICONS_REQUEST)
 
-    override val outgoingPacketTypes: Array<String> = arrayOf(PACKET_TYPE_REQUEST, PACKET_TYPE_ADB_STATUS, PACKET_TYPE_LOCK)
+    override val outgoingPacketTypes: Array<String> = arrayOf(PACKET_TYPE_REQUEST, PACKET_TYPE_ADB_STATUS, PACKET_TYPE_LOCK, PACKET_TYPE_ICON)
 
     override val hasSettings: Boolean = true
 
@@ -117,9 +129,46 @@ class MirrorPhonePlugin : Plugin() {
     }
 
     override fun onDestroy() {
+        iconScope.cancel()
         context.contentResolver.unregisterContentObserver(settingsObserver)
         context.unregisterReceiver(lockReceiver)
         mainHandler.removeCallbacks(sendChangedStatus)
+    }
+
+    // The desktop lists the apps itself, and asks for the icons it has not cached
+    private val iconScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var iconJob: Job? = null
+
+    /** One packet per icon, in the order asked, so that the desktop shows each as it arrives */
+    private fun sendIcons(packages: List<String>, placeholder: Boolean) {
+        iconJob?.cancel()
+        iconJob = iconScope.launch {
+            val pm = context.packageManager
+            if (placeholder) {
+                sendIcon(null, pm.defaultActivityIcon)
+            }
+            for (name in packages) {
+                ensureActive()
+                val icon = runCatching { pm.getApplicationIcon(name) }.getOrNull() ?: continue
+                sendIcon(name, icon)
+            }
+        }
+    }
+
+    /** A null [packageName] for the placeholder, Android's stock app icon */
+    private fun sendIcon(packageName: String?, icon: Drawable) {
+        val png = ByteArrayOutputStream().use { out ->
+            icon.toBitmap(ICON_SIZE, ICON_SIZE).compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.toByteArray()
+        }
+        val np = NetworkPacket(PACKET_TYPE_ICON)
+        if (packageName == null) {
+            np["placeholder"] = true
+        } else {
+            np["package"] = packageName
+        }
+        np["icon"] = Base64.encodeToString(png, Base64.NO_WRAP)
+        device.sendPacket(np)
     }
 
     private fun sendLockState() {
@@ -184,6 +233,10 @@ class MirrorPhonePlugin : Plugin() {
                 "enable" -> enableWirelessDebugging()
                 else -> Log.w(TAG, "Unknown adb action: $action")
             }
+            true
+        }
+        PACKET_TYPE_ICONS_REQUEST -> {
+            sendIcons(np.getStringList("packages", emptyList()), np.getBoolean("placeholder", false))
             true
         }
         PACKET_TYPE_STATUS -> {
@@ -302,6 +355,9 @@ class MirrorPhonePlugin : Plugin() {
         const val PACKET_TYPE_ADB_STATUS = "kdeconnect.mirrorphone.adb.status"
         const val PACKET_TYPE_STATUS = "kdeconnect.mirrorphone.status"
         const val PACKET_TYPE_LOCK = "kdeconnect.mirrorphone.lock"
+        const val PACKET_TYPE_ICONS_REQUEST = "kdeconnect.mirrorphone.icons.request"
+        const val PACKET_TYPE_ICON = "kdeconnect.mirrorphone.icon"
+        private const val ICON_SIZE = 96
 
         // Settings.Global.ADB_WIFI_ENABLED is hidden from the SDK
         private const val ADB_WIFI_ENABLED = "adb_wifi_enabled"

@@ -57,7 +57,7 @@ import org.kde.kdeconnect.ui.compose.KdeTheme
 import org.kde.kdeconnect.ui.compose.KdeTopAppBar
 import org.kde.kdeconnect_tp.R
 
-data class LaunchableApp(val packageName: String, val label: String)
+data class LaunchableApp(val packageName: String, val label: String, val icon: ImageBitmap)
 
 class OpenAppActivity : AppCompatActivity() {
 
@@ -97,7 +97,7 @@ class OpenAppActivity : AppCompatActivity() {
     }
 }
 
-/** The apps with a launcher entry, one per package, sorted by name */
+/** The apps with a launcher entry, one per package, sorted by name, with their icons, so that the list shows complete */
 private fun loadLaunchableApps(pm: PackageManager, ownPackage: String): List<LaunchableApp> {
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
     val activities = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -110,7 +110,7 @@ private fun loadLaunchableApps(pm: PackageManager, ownPackage: String): List<Lau
         .map { it.activityInfo }
         .filter { it.packageName != ownPackage }
         .distinctBy { it.packageName }
-        .map { LaunchableApp(it.packageName, it.loadLabel(pm).toString()) }
+        .map { LaunchableApp(it.packageName, it.loadLabel(pm).toString(), it.loadIcon(pm).toBitmap(96, 96).asImageBitmap()) }
         .sortedBy { it.label.lowercase() }
 }
 
@@ -179,20 +179,12 @@ private fun OpenAppScreen(
 
 @Composable
 private fun AppRow(app: LaunchableApp, onClick: () -> Unit) {
-    val context = LocalContext.current
-    val icon by produceState<ImageBitmap?>(null, app.packageName) {
-        value = withContext(Dispatchers.IO) {
-            runCatching { context.packageManager.getApplicationIcon(app.packageName).toBitmap(96, 96).asImageBitmap() }.getOrNull()
-        }
-    }
     Row(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Box(Modifier.size(40.dp)) {
-            icon?.let { Image(it, contentDescription = null, modifier = Modifier.fillMaxSize()) }
-        }
+        Image(app.icon, contentDescription = null, modifier = Modifier.size(40.dp))
         Column {
             Text(app.label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
