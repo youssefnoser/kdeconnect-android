@@ -7,6 +7,7 @@ package org.kde.kdeconnect.plugins.mirrorphone
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -24,6 +25,7 @@ import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.helpers.NotificationHelper
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect_tp.R
 
 /**
@@ -34,6 +36,9 @@ import org.kde.kdeconnect_tp.R
  * turn Wireless debugging on when asked, which works once the desktop granted us
  * WRITE_SECURE_SETTINGS over adb. Activities cannot be opened from the background, so the
  * desktop's "open on device" requests show notifications that lead to the settings.
+ *
+ * The settings page shows the desktop's side too (its adb connection, pairing and tools), which
+ * the desktop sends while the page has asked for it.
  */
 @LoadablePlugin
 class MirrorPhonePlugin : Plugin() {
@@ -43,15 +48,39 @@ class MirrorPhonePlugin : Plugin() {
     override val description: String
         get() = context.getString(R.string.pref_plugin_mirrorphone_desc)
 
-    override val supportedPacketTypes: Array<String> = arrayOf(PACKET_TYPE_RESPONSE, PACKET_TYPE_ADB)
+    override val supportedPacketTypes: Array<String> = arrayOf(PACKET_TYPE_RESPONSE, PACKET_TYPE_ADB, PACKET_TYPE_STATUS)
 
     override val outgoingPacketTypes: Array<String> = arrayOf(PACKET_TYPE_REQUEST, PACKET_TYPE_ADB_STATUS)
+
+    override val hasSettings: Boolean = true
+
+    override fun getSettingsFragment(activity: Activity): PluginSettingsFragment =
+        MirrorPhoneSettingsFragment.newInstance(pluginKey, device.deviceId)
+
+    /** What the desktop reports for the settings page; null until it answered [requestDesktopStatus] */
+    data class DesktopStatus(
+        val transport: String,
+        val busy: Boolean,
+        val message: String,
+        val pairingState: String,
+        val pairingMessage: String,
+        val adb: String,
+        val scrcpy: String,
+    )
+
+    @Volatile
+    var desktopStatus: DesktopStatus? = null
+        private set
+
+    /** Called on the main thread when [desktopStatus] or this device's developer settings change */
+    var statusListener: (() -> Unit)? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
     // Several settings change together, e.g. turning Developer options off; report them once
     private val sendChangedStatus = Runnable {
         sendStatus()
+        statusListener?.invoke()
     }
     private val settingsObserver = object : ContentObserver(mainHandler) {
         override fun onChange(selfChange: Boolean) {
@@ -84,6 +113,12 @@ class MirrorPhonePlugin : Plugin() {
         toast(context.getString(R.string.mirrorphone_mirroring, device.name), Toast.LENGTH_SHORT)
     }
 
+    fun requestDesktopStatus() {
+        val np = NetworkPacket(PACKET_TYPE_REQUEST)
+        np["action"] = "status"
+        device.sendPacket(np)
+    }
+
     override fun onPacketReceived(np: NetworkPacket): Boolean = when (np.type) {
         PACKET_TYPE_RESPONSE -> {
             if (!np.getBoolean("success", false)) {
@@ -98,6 +133,19 @@ class MirrorPhonePlugin : Plugin() {
                 "enable" -> enableWirelessDebugging()
                 else -> Log.w(TAG, "Unknown adb action: $action")
             }
+            true
+        }
+        PACKET_TYPE_STATUS -> {
+            desktopStatus = DesktopStatus(
+                transport = np.getString("transport", ""),
+                busy = np.getBoolean("busy", false),
+                message = np.getString("message", ""),
+                pairingState = np.getString("pairingState", "idle"),
+                pairingMessage = np.getString("pairingMessage", ""),
+                adb = np.getString("adb", ""),
+                scrcpy = np.getString("scrcpy", ""),
+            )
+            mainHandler.post { statusListener?.invoke() }
             true
         }
         else -> false
@@ -201,6 +249,7 @@ class MirrorPhonePlugin : Plugin() {
         const val PACKET_TYPE_RESPONSE = "kdeconnect.mirrorphone.response"
         const val PACKET_TYPE_ADB = "kdeconnect.mirrorphone.adb"
         const val PACKET_TYPE_ADB_STATUS = "kdeconnect.mirrorphone.adb.status"
+        const val PACKET_TYPE_STATUS = "kdeconnect.mirrorphone.status"
 
         // Settings.Global.ADB_WIFI_ENABLED is hidden from the SDK
         private const val ADB_WIFI_ENABLED = "adb_wifi_enabled"

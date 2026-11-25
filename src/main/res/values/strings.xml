@@ -687,4 +687,27 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
     <string name="mirrorphone_developer_options_off">Developer options are off on the device. Turn them on from the notification on the device, then try again.</string>
     <string name="mirrorphone_developer_notification_title">Turn on Developer options</string>
     <string name="mirrorphone_developer_notification_text">To show this device\'s screen on a computer, tap here to open About phone, then tap \"Build number\" seven times.</string>
+    <string name="mirrorphone_settings_connection">Connection</string>
+    <string name="mirrorphone_settings_status">Status</string>
+    <string name="mirrorphone_settings_connecting">Connecting…</string>
+    <string name="mirrorphone_settings_connected_usb">Connected over USB</string>
+    <string name="mirrorphone_settings_connected_wifi">Connected over Wireless debugging</string>
+    <string name="mirrorphone_settings_not_connected">Not connected</string>
+    <string name="mirrorphone_settings_waiting">Waiting for %1$s. It needs the KDE Connect version with “Mirror Phone”.</string>
+    <string name="mirrorphone_settings_this_device">This device</string>
+    <string name="mirrorphone_settings_developer_options">Developer options</string>
+    <string name="mirrorphone_settings_usb_debugging">USB debugging</string>
+    <string name="mirrorphone_settings_wireless_debugging">Wireless debugging</string>
+    <string name="mirrorphone_settings_can_enable">Turn on by itself</string>
+    <string name="mirrorphone_settings_can_enable_yes">Allowed: this device turns Wireless debugging on when the computer needs it</string>
+    <string name="mirrorphone_settings_can_enable_no">Allowed automatically the first time the computer connects over adb, by USB or Wireless debugging</string>
+    <string name="mirrorphone_settings_on">On</string>
+    <string name="mirrorphone_settings_off">Off</string>
+    <string name="mirrorphone_settings_pairing">Wireless debugging pairing</string>
+    <string name="mirrorphone_settings_pairing_state">Pairing</string>
+    <string name="mirrorphone_settings_not_pairing">Not pairing. Start pairing from the computer\'s settings for this plugin.</string>
+    <string name="mirrorphone_settings_tools">Tools on the computer</string>
+    <string name="mirrorphone_settings_adb" translatable="false">adb</string>
+    <string name="mirrorphone_settings_scrcpy" translatable="false">scrcpy</string>
+    <string name="mirrorphone_settings_not_installed">Not installed</string>
 </resources>
