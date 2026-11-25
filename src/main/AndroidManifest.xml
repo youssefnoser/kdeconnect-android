@@ -230,6 +230,15 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
             </intent-filter>
         </receiver>
 
+        <!-- Started by the desktop over adb, over an app it opened on a virtual display while this device is locked;
+             it only asks the user to unlock the device -->
+        <activity
+            android:name="org.kde.kdeconnect.plugins.mirrorphone.UnlockPromptActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/KdeConnectTheme.NoActionBar" />
         <activity
             android:name="org.kde.kdeconnect.plugins.mirrorphone.OpenAppActivity"
             android:label="@string/openapp_title"

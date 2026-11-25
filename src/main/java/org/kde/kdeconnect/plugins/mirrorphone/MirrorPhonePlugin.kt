@@ -8,13 +8,18 @@ package org.kde.kdeconnect.plugins.mirrorphone
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.KeyguardManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
@@ -50,7 +55,7 @@ class MirrorPhonePlugin : Plugin() {
 
     override val supportedPacketTypes: Array<String> = arrayOf(PACKET_TYPE_RESPONSE, PACKET_TYPE_ADB, PACKET_TYPE_STATUS)
 
-    override val outgoingPacketTypes: Array<String> = arrayOf(PACKET_TYPE_REQUEST, PACKET_TYPE_ADB_STATUS)
+    override val outgoingPacketTypes: Array<String> = arrayOf(PACKET_TYPE_REQUEST, PACKET_TYPE_ADB_STATUS, PACKET_TYPE_LOCK)
 
     override val hasSettings: Boolean = true
 
@@ -89,17 +94,42 @@ class MirrorPhonePlugin : Plugin() {
         }
     }
 
+    // Apps open on the desktop run on virtual displays, which sleep with the phone and take no input while it is locked:
+    // the desktop wakes the phone and asks to unlock it when told
+    private val lockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) = sendLockState()
+    }
+
     override fun onCreate() {
         val resolver = context.contentResolver
         for (name in listOf(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, Settings.Global.ADB_ENABLED, ADB_WIFI_ENABLED)) {
             resolver.registerContentObserver(Settings.Global.getUriFor(name), false, settingsObserver)
         }
+        val lockEvents = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        // Exported, as SystemUI sends USER_PRESENT under its own uid; these are protected broadcasts, which other apps
+        // cannot send
+        ContextCompat.registerReceiver(context, lockReceiver, lockEvents, ContextCompat.RECEIVER_EXPORTED)
         sendStatus()
     }
 
     override fun onDestroy() {
         context.contentResolver.unregisterContentObserver(settingsObserver)
+        context.unregisterReceiver(lockReceiver)
         mainHandler.removeCallbacks(sendChangedStatus)
+    }
+
+    private fun sendLockState() {
+        if (!isDeviceInitialized) {
+            return
+        }
+        val np = NetworkPacket(PACKET_TYPE_LOCK)
+        np["locked"] = context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        np["screenOn"] = context.getSystemService(PowerManager::class.java).isInteractive
+        device.sendPacket(np)
     }
 
     override fun getUiButtons(): List<PluginUiButton> = listOf(
@@ -271,6 +301,7 @@ class MirrorPhonePlugin : Plugin() {
         const val PACKET_TYPE_ADB = "kdeconnect.mirrorphone.adb"
         const val PACKET_TYPE_ADB_STATUS = "kdeconnect.mirrorphone.adb.status"
         const val PACKET_TYPE_STATUS = "kdeconnect.mirrorphone.status"
+        const val PACKET_TYPE_LOCK = "kdeconnect.mirrorphone.lock"
 
         // Settings.Global.ADB_WIFI_ENABLED is hidden from the SDK
         private const val ADB_WIFI_ENABLED = "adb_wifi_enabled"
